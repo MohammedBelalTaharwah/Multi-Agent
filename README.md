@@ -1,8 +1,11 @@
-# Multi-Agent Research Assistant 🤖🧠
+# Multi-Agent Research Assistant
 
-A sophisticated multi-agent system built with LangChain and LangGraph that collaborates to produce comprehensive research reports.
+A collaborative **Agent-to-Agent (A2A)** system built using **LangChain** and **LangGraph**, designed to generate detailed and well-structured research reports through intelligent agent cooperation.  
 
-## 📁 Project Structure
+![LangGraph Architecture](assets/research_graph.png)  
+*System architecture built with LangGraph illustrating multi-agent collaboration.*
+
+##  Project Structure
 
 ```
 multi_agent_researcher/
@@ -18,7 +21,7 @@ multi_agent_researcher/
 └── README.md
 ```
 
-## 🚀 Installation
+##  Installation
 
 ### Prerequisites
 
@@ -96,22 +99,22 @@ The app will open in your browser at `http://localhost:8501`
 
 The system uses four specialized AI agents that work together:
 
-1. **🎯 Supervisor Agent**
+1. ** Supervisor Agent**
    - Coordinates the entire workflow
    - Decides which agent should work next
    - Manages task delegation
 
-2. **🔍 Researcher Agent**
+2. ** Researcher Agent**
    - Searches the web for relevant information
    - Uses Tavily search API
    - Gathers and compiles research findings
 
-3. **✍️ Writer Agent**
+3. ** Writer Agent**
    - Creates research reports from findings
    - Revises drafts based on feedback
    - Ensures coherent and well-structured output
 
-4. **🔎 Critiquer Agent**
+4. ** Critiquer Agent**
    - Reviews drafts for quality
    - Provides actionable feedback
    - Approves final reports
@@ -124,7 +127,7 @@ Start → Supervisor → Researcher → Supervisor → Writer → Critiquer → 
                 └────────────────── (loop until approved) ──────────────┘
 ```
 
-## 🔧 Troubleshooting
+##  Troubleshooting
 
 ### Common Issues
 
