@@ -44,21 +44,6 @@ Enter a research topic, and a team of AI agents will collaborate to produce a co
 
 st.divider()
 
-# --- Show Graph Image ---
-graph_path = "assets/research_graph.png"
-mermaid_path = "assets/research_graph.mmd"
-
-if os.path.exists(graph_path):
-    st.image(graph_path, caption="Multi-Agent Workflow", use_column_width=True)
-elif os.path.exists(mermaid_path):
-    with open(mermaid_path, "r") as f:
-        mermaid_code = f.read()
-    st.code(mermaid_code, language="mermaid")
-    st.info("💡 View this diagram at: https://mermaid.live/")
-else:
-    st.info("💡 Run `python visualize_graph.py` to generate workflow visualization.")
-
-st.divider()
 
 # --- Check API Keys ---
 if not check_api_keys():
@@ -117,28 +102,42 @@ if st.button("🚀 Start Research", type="primary", use_container_width=True):
         st.info("🤖 Agents are starting their work...")
         
         # Create containers for live updates
-        status_container = st.container()
         progress_bar = st.progress(0)
+        status_placeholder = st.empty()
         
-        # Use st.status to show progress
-        with status_container:
-            with st.status("🔄 Agents are collaborating...", expanded=True) as status:
-                final_state = None
-                step_count = 0
+        # Container for step-by-step progress
+        progress_container = st.container()
+        
+        final_state = None
+        step_count = 0
+        all_states = []  # Keep track of all states
+        
+        try:
+            # Stream the graph execution
+            with progress_container:
+                st.subheader("🔄 Agent Activity Log")
                 
-                try:
-                    # Stream the graph execution
-                    for step in app.stream(initial_state, config=config):
-                        step_count += 1
-                        progress_bar.progress(min(step_count / max_iterations, 1.0))
+                for step in app.stream(initial_state, config=config):
+                    step_count += 1
+                    progress_bar.progress(min(step_count / max_iterations, 1.0))
+                    
+                    # Get node name and output
+                    node_name = list(step.keys())[0]
+                    node_output = step[node_name]
+                    
+                    # Store the complete state
+                    all_states.append((node_name, node_output))
+                    final_state = node_output  # Keep updating final state
+                    
+                    # Display node output with expandable previews
+                    with st.container():
+                        col1, col2 = st.columns([3, 1])
                         
-                        # Get node name and output
-                        node_name = list(step.keys())[0]
-                        node_output = step[node_name]
-                        final_state = node_output
+                        with col1:
+                            st.markdown(f"### 🤖 Agent: `{node_name.upper()}`")
                         
-                        # Display node output
-                        st.markdown(f"### 🤖 Agent: `{node_name.upper()}`")
+                        with col2:
+                            st.caption(f"Step {step_count}")
                         
                         if node_name == "supervisor":
                             next_step = node_output.get('next_step', 'N/A')
@@ -151,15 +150,37 @@ if st.button("🚀 Start Research", type="primary", use_container_width=True):
                             if findings:
                                 latest = findings[-1]
                                 st.success("✓ Research completed")
-                                with st.expander("View findings"):
-                                    st.write(latest)
+                                
+                                # Preview with "Show More" button
+                                preview_length = 300
+                                if len(latest) > preview_length:
+                                    st.markdown("**Research Preview:**")
+                                    st.info(latest[:preview_length] + "...")
+                                    
+                                    # Unique key for each expander
+                                    with st.expander(f"📖 Show Full Research (Step {step_count})"):
+                                        st.markdown(latest)
+                                else:
+                                    st.markdown("**Research:**")
+                                    st.info(latest)
                         
                         elif node_name == "writer":
                             draft = node_output.get('draft', '')
                             revision = node_output.get('revision_number', 0)
-                            st.success(f"✓ Draft {revision} generated")
-                            with st.expander("Preview draft"):
-                                st.write(draft[:500] + "..." if len(draft) > 500 else draft)
+                            st.success(f"✓ Draft {revision} generated ({len(draft)} chars)")
+                            
+                            # Preview with "Show More" button
+                            preview_length = 400
+                            if len(draft) > preview_length:
+                                st.markdown("**Draft Preview:**")
+                                st.info(draft[:preview_length] + "...")
+                                
+                                # Unique key for each expander
+                                with st.expander(f"📖 Show Full Draft (Step {step_count})"):
+                                    st.markdown(draft)
+                            else:
+                                st.markdown("**Draft:**")
+                                st.info(draft)
                         
                         elif node_name == "critiquer":
                             critique = node_output.get('critique_notes', '')
@@ -167,54 +188,109 @@ if st.button("🚀 Start Research", type="primary", use_container_width=True):
                                 st.success("✅ Draft APPROVED!")
                             else:
                                 st.warning("📝 Revisions requested")
-                                with st.expander("View critique"):
-                                    st.write(critique)
+                            
+                            # Preview with "Show More" button
+                            preview_length = 300
+                            if len(critique) > preview_length:
+                                st.markdown("**Critique Preview:**")
+                                st.info(critique[:preview_length] + "...")
+                                
+                                # Unique key for each expander
+                                with st.expander(f"📖 Show Full Critique (Step {step_count})"):
+                                    st.markdown(critique)
+                            else:
+                                st.markdown("**Critique:**")
+                                st.info(critique)
                         
                         st.divider()
-                        time.sleep(0.5)
                     
-                    # Update status when done
-                    status.update(label="✅ Work Complete!", state="complete")
-                    
-                except Exception as e:
-                    status.update(label="❌ Error occurred", state="error")
-                    st.error(f"An error occurred: {str(e)}")
-                    st.exception(e)
+                    time.sleep(0.3)
+            
+            # Update status when done
+            status_placeholder.success("✅ Research Complete!")
+            progress_bar.progress(1.0)
+            
+            # Debug: Print final state info
+            print(f"Final state type: {type(final_state)}")
+            print(f"Final state keys: {final_state.keys() if isinstance(final_state, dict) else 'Not a dict'}")
+            print(f"Draft exists: {bool(final_state.get('draft') if isinstance(final_state, dict) else False)}")
+            print(f"Draft length: {len(final_state.get('draft', '')) if isinstance(final_state, dict) else 0}")
+            
+        except Exception as e:
+            status_placeholder.error("❌ Error occurred")
+            st.error(f"An error occurred: {str(e)}")
+            st.exception(e)
+            final_state = None
         
-        # Display final report
-        if final_state and final_state.get("draft"):
-            st.divider()
+        # Display final report - IMPROVED LOGIC
+        st.divider()
+        
+        # Try to get the draft from final_state
+        final_draft = None
+        if final_state and isinstance(final_state, dict):
+            final_draft = final_state.get("draft", "")
+        
+        # If no draft in final_state, search through all states
+        if not final_draft or len(final_draft.strip()) < 50:
+            print("Searching for draft in all states...")
+            for node_name, state in reversed(all_states):
+                if isinstance(state, dict) and state.get("draft"):
+                    draft_candidate = state.get("draft", "")
+                    if len(draft_candidate.strip()) > 50:
+                        final_draft = draft_candidate
+                        final_state = state
+                        print(f"Found draft in {node_name} state")
+                        break
+        
+        if final_draft and len(final_draft.strip()) > 50:
             st.header("📄 Final Research Report")
             
-            # Display report
-            st.markdown(final_state["draft"])
+            # Display report in a nice container
+            with st.container():
+                st.markdown(final_draft)
+            
+            st.divider()
             
             # Display metadata
             col1, col2 = st.columns(2)
             
             with col1:
                 st.subheader("📊 Report Statistics")
-                st.metric("Revisions", final_state.get("revision_number", 0))
-                st.metric("Research Sources", len(final_state.get("research_findings", [])))
-                st.metric("Word Count", len(final_state["draft"].split()))
+                revision_count = final_state.get("revision_number", 0) if isinstance(final_state, dict) else 0
+                research_count = len(final_state.get("research_findings", [])) if isinstance(final_state, dict) else 0
+                word_count = len(final_draft.split())
+                
+                st.metric("Revisions", revision_count)
+                st.metric("Research Sources", research_count)
+                st.metric("Word Count", word_count)
+                st.metric("Character Count", len(final_draft))
             
             with col2:
                 st.subheader("🔍 Research Findings")
-                with st.expander("View all research data"):
-                    for idx, finding in enumerate(final_state.get("research_findings", []), 1):
-                        st.markdown(f"**Finding {idx}:**")
-                        st.write(finding)
-                        st.divider()
+                if isinstance(final_state, dict) and final_state.get("research_findings"):
+                    # Use expander here (safe, outside of workflow)
+                    with st.expander("View all research data", expanded=False):
+                        for idx, finding in enumerate(final_state.get("research_findings", []), 1):
+                            st.markdown(f"**Finding {idx}:**")
+                            st.write(finding)
+                            if idx < len(final_state.get("research_findings", [])):
+                                st.divider()
+                else:
+                    st.info("No research findings available")
             
             # Download button
             st.download_button(
                 label="📥 Download Report",
-                data=final_state["draft"],
+                data=final_draft,
                 file_name=f"research_report_{topic.replace(' ', '_')}.txt",
-                mime="text/plain"
+                mime="text/plain",
+                use_container_width=True
             )
         else:
             st.error("❌ No report was generated. Please try again.")
+            if final_state:
+                with st.expander("🔍 Debug: View Final State"):
+                    st.json(final_state if isinstance(final_state, dict) else {"error": "State is not a dictionary"})
 
 # Footer
 st.divider()

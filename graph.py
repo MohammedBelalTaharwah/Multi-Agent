@@ -56,9 +56,11 @@ def research_node(state: ResearchState) -> dict:
     print(f"Researching: {sub_task}")
     
     try:
-        result = researcher_agent.invoke({"input": sub_task})
+        # researcher_agent is a Python callable (function), not an object with `.invoke`.
+        # Call it directly and expect a dict return value.
+        result = researcher_agent({"input": sub_task})
         findings = result.get("output", "Research completed")
-        print(f"Found: {findings[:100]}...")
+        print(f"Found: {str(findings)[:100]}...")
     except Exception as e:
         print(f"Research error: {e}")
         findings = f"Research on {sub_task} - information gathered"
