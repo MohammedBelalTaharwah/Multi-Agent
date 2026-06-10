@@ -5,297 +5,320 @@ import os
 from dotenv import load_dotenv
 from graph import app
 import time
+import json
 
-# Load environment variables
 load_dotenv()
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="Multi-Agent Research Assistant 🤖",
-    page_icon="🧠",
-    layout="wide"
-)
+st.set_page_config(page_title="Multi-Agent Research Assistant", page_icon="brain", layout="wide")
 
-# --- Check for API Keys ---
+
 def check_api_keys():
-    """Check if required API keys are present."""
-    together_key = os.environ.get("TOGETHER_API_KEY")
-    tavily_key = os.environ.get("TAVILY_API_KEY")
-    
-    if not together_key or not tavily_key:
-        st.error("🚨 API keys not found! Please set TOGETHER_API_KEY and TAVILY_API_KEY in your .env file.")
+    llm_provider = os.environ.get("LLM_PROVIDER", "groq").lower().strip()
+    search_provider = os.environ.get("SEARCH_PROVIDER", "duckduckgo").lower().strip()
+    missing = []
+    if llm_provider == "groq" and not os.environ.get("GROQ_API_KEY"):
+        missing.append("GROQ_API_KEY (get free at console.groq.com)")
+    elif llm_provider == "together" and not os.environ.get("TOGETHER_API_KEY"):
+        missing.append("TOGETHER_API_KEY")
+    if search_provider == "tavily" and not os.environ.get("TAVILY_API_KEY"):
+        missing.append("TAVILY_API_KEY")
+    if missing:
+        st.error(f"Missing API keys: {', '.join(missing)}. Please set them in your .env file.")
         return False
-    
-    st.success("✅ API keys loaded successfully.")
+    st.success("Configuration loaded successfully.")
     return True
 
-# --- Header ---
-st.title("Multi-Agent Research Assistant 🤖🧠")
+
+st.title("Multi-Agent Research Assistant")
 st.markdown("""
-Welcome to your intelligent research assistant! 
-Enter a research topic, and a team of AI agents will collaborate to produce a comprehensive report.
+Enter a research topic, and a team of 9 AI agents will collaborate to produce a comprehensive report.
 
 **Agent Team:**
-- 🎯 **Supervisor**: Manages the workflow and coordinates tasks
-- 🔍 **Researcher**: Gathers information using web search
-- ✍️ **Writer**: Creates and revises the research report
-- 🔎 **Critiquer**: Reviews drafts and provides feedback
+- **Supervisor** - Manages workflow & generates sub-questions
+- **Researcher** - Searches web, scrapes pages, stores in vector DB
+- **Browser** - Playwright automation for academic databases
+- **Classifier** - Classifies sources by category & relevance (score 1-10)
+- **NER Agent** - Extracts entities (people, orgs, tech) & relationships
+- **Analyzer** - Identifies themes & builds structured outline
+- **Writer** - Creates academic report with citations & image requests
+- **Illustrator** - Generates illustrations via Stable Diffusion API
+- **Critiquer** - Reviews with scoring rubric (1-10), approves or revises
 """)
 
 st.divider()
 
-
-# --- Check API Keys ---
 if not check_api_keys():
     st.stop()
 
-# --- Main Application ---
-st.header("🚀 Start Your Research")
+st.header("Start Your Research")
 
-# User input
-topic = st.text_input(
-    "Enter your research topic:",
-    placeholder="e.g., Impact of quantum computing on cybersecurity",
-    key="topic_input"
-)
+topic = st.text_input("Enter your research topic:", placeholder="e.g., Impact of quantum computing on cybersecurity", key="topic_input")
 
-# Sidebar configuration
 with st.sidebar:
-    st.header("⚙️ Configuration")
-    max_iterations = st.slider(
-        "Max Workflow Iterations",
-        min_value=5,
-        max_value=25,
-        value=15,
-        help="Maximum number of agent interactions"
-    )
-    
+    st.header("Configuration")
+    max_iterations = st.slider("Max Workflow Iterations", min_value=5, max_value=30, value=20)
+    enable_browser = st.checkbox("Enable Browser Agent (Playwright)", value=False)
+    enable_illustrations = st.checkbox("Enable Image Generation (Stability AI)", value=False)
     st.divider()
-    st.subheader("📋 How it works")
+    st.subheader("How it works")
     st.markdown("""
-    1. **Supervisor** analyzes the task
-    2. **Researcher** gathers information
-    3. **Writer** creates a draft
-    4. **Critiquer** reviews quality
-    5. Loop continues until approved
+    1. **Supervisor** plans research & generates sub-questions
+    2. **Researcher** gathers info (web search + scraping)
+    3. **Browser** searches academic databases (optional)
+    4. **Classifier** categorizes & scores sources
+    5. **NER Agent** extracts entities & relationships
+    6. **Analyzer** finds themes & builds outline
+    7. **Writer** creates the report
+    8. **Illustrator** generates diagrams (optional)
+    9. **Critiquer** scores & approves/revises
+    10. **Finalize** exports PDF
     """)
 
-# Start button
-if st.button("🚀 Start Research", type="primary", use_container_width=True):
+if st.button("Start Research", type="primary", use_container_width=True):
     if not topic:
-        st.error("⚠️ Please enter a research topic.")
+        st.error("Please enter a research topic.")
     else:
-        # Define the initial state
         initial_state = {
             "main_task": topic,
+            "sub_questions": [],
+            "status": "started",
             "research_findings": [],
+            "raw_sources": [],
+            "browser_results": [],
+            "specialized_research_done": [],
+            "classification_results": "",
+            "classified_sources": [],
+            "named_entities": "",
+            "entities": [],
+            "entity_relationships": [],
+            "analysis_outline": "",
+            "organized_findings": [],
+            "outline": [],
             "draft": "",
+            "illustration_requests": [],
+            "generated_illustrations": [],
+            "illustrations": [],
             "critique_notes": "",
+            "critic_feedback": None,
+            "critic_score": None,
             "revision_number": 0,
+            "final_report": None,
+            "transformer_config": {"provider": os.environ.get("LLM_PROVIDER", "groq"), "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")},
+            "moe_analysis": None,
             "next_step": "",
-            "current_sub_task": ""
+            "current_sub_task": "",
+            "research_persona": "",
+            "human_input": None,
         }
-        
-        # Configuration
         config = {"recursion_limit": max_iterations}
-        
-        st.info("🤖 Agents are starting their work...")
-        
-        # Create containers for live updates
+
+        st.info("Agents are starting their work...")
         progress_bar = st.progress(0)
         status_placeholder = st.empty()
-        
-        # Container for step-by-step progress
         progress_container = st.container()
-        
+
         final_state = None
         step_count = 0
-        all_states = []  # Keep track of all states
-        
+        all_states = []
+
         try:
-            # Stream the graph execution
             with progress_container:
-                st.subheader("🔄 Agent Activity Log")
-                
+                st.subheader("Agent Activity Log")
+
                 for step in app.stream(initial_state, config=config):
                     step_count += 1
                     progress_bar.progress(min(step_count / max_iterations, 1.0))
-                    
-                    # Get node name and output
+
                     node_name = list(step.keys())[0]
                     node_output = step[node_name]
-                    
-                    # Store the complete state
                     all_states.append((node_name, node_output))
-                    final_state = node_output  # Keep updating final state
-                    
-                    # Display node output with expandable previews
+                    final_state = node_output
+
                     with st.container():
                         col1, col2 = st.columns([3, 1])
-                        
                         with col1:
-                            st.markdown(f"### 🤖 Agent: `{node_name.upper()}`")
-                        
+                            st.markdown(f"### Agent: `{node_name.upper()}`")
                         with col2:
                             st.caption(f"Step {step_count}")
-                        
+
                         if node_name == "supervisor":
-                            next_step = node_output.get('next_step', 'N/A')
+                            ns = node_output.get('next_step', 'N/A')
                             task = node_output.get('current_sub_task', 'N/A')
-                            st.markdown(f"**Decision:** {next_step}")
+                            st.markdown(f"**Decision:** {ns}")
                             st.markdown(f"**Task:** {task}")
-                        
+
                         elif node_name == "researcher":
                             findings = node_output.get('research_findings', [])
+                            sources = node_output.get('raw_sources', [])
                             if findings:
-                                latest = findings[-1]
-                                st.success("✓ Research completed")
-                                
-                                # Preview with "Show More" button
-                                preview_length = 300
-                                if len(latest) > preview_length:
-                                    st.markdown("**Research Preview:**")
-                                    st.info(latest[:preview_length] + "...")
-                                    
-                                    # Unique key for each expander
-                                    with st.expander(f"📖 Show Full Research (Step {step_count})"):
-                                        st.markdown(latest)
-                                else:
-                                    st.markdown("**Research:**")
-                                    st.info(latest)
-                        
+                                st.success(f"Research completed ({len(sources)} sources)")
+                                with st.expander(f"View Research (Step {step_count})"):
+                                    st.markdown(findings[-1])
+                            if sources:
+                                with st.expander(f"Sources ({len(sources)})"):
+                                    for s in sources:
+                                        st.markdown(f"- [{s.get('title','')}]({s.get('url','')})")
+
+                        elif node_name == "browser":
+                            findings = node_output.get('research_findings', [])
+                            if findings:
+                                st.success("Browser search completed")
+                                with st.expander(f"View Browser Results (Step {step_count})"):
+                                    st.markdown(findings[-1])
+
+                        elif node_name == "classifier":
+                            result = node_output.get('classification_results', '')
+                            st.success("Sources classified and scored")
+                            with st.expander(f"View Classification (Step {step_count})"):
+                                st.markdown(result)
+                            cls_srcs = node_output.get('classified_sources', [])
+                            if cls_srcs:
+                                st.caption(f"{len(cls_srcs)} classified sources")
+
+                        elif node_name == "ner":
+                            result = node_output.get('named_entities', '')
+                            rels = node_output.get('entity_relationships', [])
+                            st.success(f"Entities extracted ({len(rels)} relationships)")
+                            with st.expander(f"View NER Results (Step {step_count})"):
+                                st.markdown(result)
+                            if rels:
+                                st.caption(f"Relationships: {len(rels)}")
+
+                        elif node_name == "analyzer":
+                            result = node_output.get('analysis_outline', '')
+                            st.success("Themes extracted & outline built")
+                            with st.expander(f"View Analysis & Outline (Step {step_count})"):
+                                st.markdown(result)
+
+                        elif node_name == "illustrator":
+                            ill_texts = node_output.get('generated_illustrations', [])
+                            ill_data = node_output.get('illustrations', [])
+                            st.success(f"{len(ill_texts)} illustrations processed")
+                            with st.expander(f"View Illustrations (Step {step_count})"):
+                                for idx, ill in enumerate(ill_texts, 1):
+                                    st.markdown(f"**Diagram {idx}:**")
+                                    st.info(ill)
+                                    if idx < len(ill_texts):
+                                        st.divider()
+                                for ill in ill_data:
+                                    if ill.get("image_path"):
+                                        st.image(ill["image_path"], caption=ill.get("section", ""))
+
                         elif node_name == "writer":
                             draft = node_output.get('draft', '')
                             revision = node_output.get('revision_number', 0)
-                            st.success(f"✓ Draft {revision} generated ({len(draft)} chars)")
-                            
-                            # Preview with "Show More" button
-                            preview_length = 400
-                            if len(draft) > preview_length:
-                                st.markdown("**Draft Preview:**")
-                                st.info(draft[:preview_length] + "...")
-                                
-                                # Unique key for each expander
-                                with st.expander(f"📖 Show Full Draft (Step {step_count})"):
+                            st.success(f"Draft {revision} generated ({len(draft)} chars)")
+                            preview = 400
+                            if len(draft) > preview:
+                                st.markdown("**Preview:**")
+                                st.info(draft[:preview] + "...")
+                                with st.expander(f"View Full Draft (Step {step_count})"):
                                     st.markdown(draft)
                             else:
                                 st.markdown("**Draft:**")
                                 st.info(draft)
-                        
+
                         elif node_name == "critiquer":
-                            critique = node_output.get('critique_notes', '')
-                            if "APPROVED" in critique.upper():
-                                st.success("✅ Draft APPROVED!")
+                            feedback = node_output.get('critic_feedback', '')
+                            score = node_output.get('critic_score', None)
+                            if "APPROVED" in feedback.upper() or (score and score >= 7):
+                                st.success(f"Draft APPROVED (score: {score}/10)" if score else "Draft APPROVED!")
                             else:
-                                st.warning("📝 Revisions requested")
-                            
-                            # Preview with "Show More" button
-                            preview_length = 300
-                            if len(critique) > preview_length:
-                                st.markdown("**Critique Preview:**")
-                                st.info(critique[:preview_length] + "...")
-                                
-                                # Unique key for each expander
-                                with st.expander(f"📖 Show Full Critique (Step {step_count})"):
-                                    st.markdown(critique)
-                            else:
-                                st.markdown("**Critique:**")
-                                st.info(critique)
-                        
+                                st.warning(f"Revisions requested (score: {score}/10)" if score else "Revisions requested")
+                            with st.expander(f"View Critique (Step {step_count})"):
+                                st.markdown(feedback)
+                                if score:
+                                    st.metric("Score", f"{score}/10")
+
+                        elif node_name == "finalize":
+                            st.success("Report finalized!")
+
                         st.divider()
-                    
-                    time.sleep(0.3)
-            
-            # Update status when done
-            status_placeholder.success("✅ Research Complete!")
+                    time.sleep(0.2)
+
+            status_placeholder.success("Research Complete!")
             progress_bar.progress(1.0)
-            
-            # Debug: Print final state info
-            print(f"Final state type: {type(final_state)}")
-            print(f"Final state keys: {final_state.keys() if isinstance(final_state, dict) else 'Not a dict'}")
-            print(f"Draft exists: {bool(final_state.get('draft') if isinstance(final_state, dict) else False)}")
-            print(f"Draft length: {len(final_state.get('draft', '')) if isinstance(final_state, dict) else 0}")
-            
+
         except Exception as e:
-            status_placeholder.error("❌ Error occurred")
+            status_placeholder.error("Error occurred")
             st.error(f"An error occurred: {str(e)}")
-            st.exception(e)
+            import traceback
+            st.error(traceback.format_exc())
             final_state = None
-        
-        # Display final report - IMPROVED LOGIC
+
+        # Display final report
         st.divider()
-        
-        # Try to get the draft from final_state
         final_draft = None
         if final_state and isinstance(final_state, dict):
             final_draft = final_state.get("draft", "")
-        
-        # If no draft in final_state, search through all states
         if not final_draft or len(final_draft.strip()) < 50:
-            print("Searching for draft in all states...")
             for node_name, state in reversed(all_states):
                 if isinstance(state, dict) and state.get("draft"):
-                    draft_candidate = state.get("draft", "")
-                    if len(draft_candidate.strip()) > 50:
-                        final_draft = draft_candidate
+                    dc = state.get("draft", "")
+                    if len(dc.strip()) > 50:
+                        final_draft = dc
                         final_state = state
-                        print(f"Found draft in {node_name} state")
                         break
-        
+
         if final_draft and len(final_draft.strip()) > 50:
-            st.header("📄 Final Research Report")
-            
-            # Display report in a nice container
-            with st.container():
+            st.header("Final Research Report")
+
+            # Check for PDF
+            import glob as gb
+            pdfs = gb.glob("reports/*.pdf")
+            if pdfs:
+                latest_pdf = max(pdfs, key=os.path.getctime)
+                with open(latest_pdf, "rb") as f:
+                    st.download_button("Download PDF", data=f, file_name=os.path.basename(latest_pdf), mime="application/pdf")
+
+            # Show report tabs
+            tab1, tab2, tab3 = st.tabs(["Report", "Statistics", "Entities & Sources"])
+            with tab1:
                 st.markdown(final_draft)
-            
-            st.divider()
-            
-            # Display metadata
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📊 Report Statistics")
-                revision_count = final_state.get("revision_number", 0) if isinstance(final_state, dict) else 0
-                research_count = len(final_state.get("research_findings", [])) if isinstance(final_state, dict) else 0
+
+            with tab2:
+                rev_count = final_state.get("revision_number", 0) if isinstance(final_state, dict) else 0
+                src_count = len(final_state.get("raw_sources", [])) if isinstance(final_state, dict) else 0
+                ent_count = len(final_state.get("entities", [])) if isinstance(final_state, dict) else 0
+                score = final_state.get("critic_score", None) if isinstance(final_state, dict) else None
                 word_count = len(final_draft.split())
-                
-                st.metric("Revisions", revision_count)
-                st.metric("Research Sources", research_count)
-                st.metric("Word Count", word_count)
-                st.metric("Character Count", len(final_draft))
-            
-            with col2:
-                st.subheader("🔍 Research Findings")
-                if isinstance(final_state, dict) and final_state.get("research_findings"):
-                    # Use expander here (safe, outside of workflow)
-                    with st.expander("View all research data", expanded=False):
-                        for idx, finding in enumerate(final_state.get("research_findings", []), 1):
-                            st.markdown(f"**Finding {idx}:**")
-                            st.write(finding)
-                            if idx < len(final_state.get("research_findings", [])):
-                                st.divider()
-                else:
-                    st.info("No research findings available")
-            
-            # Download button
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Revisions", rev_count)
+                    st.metric("Sources", src_count)
+                with col2:
+                    st.metric("Entities", ent_count)
+                    st.metric("Word Count", word_count)
+                with col3:
+                    if score:
+                        st.metric("Critic Score", f"{score}/10")
+
+            with tab3:
+                entities_list = final_state.get("entities", []) if isinstance(final_state, dict) else []
+                relationships = final_state.get("entity_relationships", []) if isinstance(final_state, dict) else []
+                if entities_list:
+                    st.subheader("Named Entities")
+                    st.json(entities_list)
+                if relationships:
+                    st.subheader("Entity Relationships")
+                    st.json(relationships)
+
             st.download_button(
-                label="📥 Download Report",
+                label="Download Report (TXT)",
                 data=final_draft,
                 file_name=f"research_report_{topic.replace(' ', '_')}.txt",
                 mime="text/plain",
                 use_container_width=True
             )
         else:
-            st.error("❌ No report was generated. Please try again.")
+            st.error("No report was generated. Please try again.")
             if final_state:
-                with st.expander("🔍 Debug: View Final State"):
-                    st.json(final_state if isinstance(final_state, dict) else {"error": "State is not a dictionary"})
+                with st.expander("Debug: View Final State"):
+                    st.json(final_state if isinstance(final_state, dict) else {"error": "Not a dictionary"})
 
-# Footer
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: gray;'>
-    <p>Powered by LangChain, LangGraph, Together AI & Tavily</p>
+<p>Powered by LangChain, LangGraph, Groq, ChromaDB & Streamlit</p>
 </div>
 """, unsafe_allow_html=True)

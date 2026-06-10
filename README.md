@@ -1,153 +1,113 @@
 # Multi-Agent Research Assistant
 
-A collaborative **Agent-to-Agent (A2A)** system built using **LangChain** and **LangGraph**, designed to generate detailed and well-structured research reports through intelligent agent cooperation.  
+A collaborative multi-agent research system built with **LangGraph** and **Streamlit**. Nine specialized AI agents work together to research a topic, analyze findings, and produce a structured report.
 
-![LangGraph Architecture](assets/research_graph.png)  
-*System architecture built with LangGraph illustrating multi-agent collaboration.*
+## Architecture
 
-##  Project Structure
-
-```
-multi_agent_researcher/
-├── assets/
-│   └── (graph visualizations saved here)
-├── .env
-├── requirements.txt
-├── prompts.py
-├── agents.py
-├── graph.py
-├── visualize_graph.py
-├── app.py
-└── README.md
-```
-
-##  Installation
-
-### Prerequisites
-
-- Python 3.9 or higher
-- pip package manager
-- (Optional) Graphviz for graph visualization
-
-### Step 1: Clone or Create Project Directory
-
-```bash
-mkdir multi_agent_researcher
-cd multi_agent_researcher
-```
-
-### Step 2: Install Python Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Step 3: Configure Environment Variables
-
-Create a `.env` file in the root directory:
-
-```bash
-# Get API key from https://www.together.ai/
-TOGETHER_API_KEY=your_together_api_key_here
-
-# Get API key from https://tavily.com/
-TAVILY_API_KEY=your_tavily_api_key_here
-```
-
-**Getting API Keys:**
-
-1. **Together AI**: Sign up at [together.ai](https://www.together.ai/) and create an API key
-2. **Tavily**: Sign up at [tavily.com](https://tavily.com/) and get your API key
-
-### Step 4: (Optional) Install Graphviz for Visualization
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install graphviz graphviz-dev
-```
-
-**macOS:**
-```bash
-brew install graphviz
-```
-
-**Windows:**
-```bash
-choco install graphviz
+The system uses a **supervisor‑worker** pattern — a Supervisor agent orchestrates the workflow, dispatching tasks to specialized agents and routing their outputs through a defined pipeline.
 
 ```
-
-## 🎯 Usage
-
-### Generate Workflow Visualization (Optional)
-
-```bash
-python visualize_graph.py
+Supervisor
+   |
+   +---> Researcher (general search)
+   +---> Researcher (hardware/compute persona)
+   +---> Researcher (ethics/sociology persona)
+   +---> Browser (Google Scholar)
+   +---> Classifier (source scoring)
+   +---> NER (entity extraction)
+   +---> Analyzer (themes & outline)
+   +---> Illustrator (diagrams via Stable Diffusion)
+   +---> Writer (draft & revision)
+   +---> Critiquer (scoring + repetition detection)
+   +---> Finalize (PDF export)
 ```
 
-This creates a visual diagram of the agent workflow in `assets/research_graph.png`
+## Agents
 
-### Run the Streamlit Application
+| Agent | Role |
+|-------|------|
+| **Supervisor** | Routes work using rule-based logic; generates sub-questions |
+| **Researcher** | Web search via DuckDuckGo with specialized hardware/ethics personas |
+| **Browser** | Google Scholar automation via Playwright |
+| **Classifier** | Scores sources (1–10), filters low-relevance results |
+| **NER** | Extracts people, orgs, technologies, dates, locations + entity relationships |
+| **Analyzer** | Identifies key themes and builds a structured report outline |
+| **Illustrator** | Generates image prompts (and optionally real images via Stability AI) |
+| **Writer** | Produces the draft; revises based on critic feedback |
+| **Critiquer** | Scores 5 criteria (originality, accuracy, completeness, clarity, depth); detects repetitive phrasing and redundant examples; forces REVISE if 3+ repetition issues found |
 
-```bash
-streamlit run app.py
+## Features
+
+- **ChromaDB** vector store for persisting and searching research findings
+- **MCP tool abstraction** layer for search, scrape, classify, and entity extraction
+- **PDF export** via WeasyPrint
+- **Duplicate detection**: The Critic scans for repetitive phrasing and forces rewrites
+- **Specialized research personas**: Hardware/compute and ethics/sociology agents produce distinct, non-overlapping contributions
+
+## Quick Start
+
+1. **Clone the repo**
+   ```bash
+   git clone https://github.com/MohammedBelalTaharwah/Multi-Agent.git
+   cd Multi-Agent
+   ```
+
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment variables**
+   Create a `.env` file:
+   ```env
+   LLM_PROVIDER=groq
+   GROQ_API_KEY=gsk_your_key_here
+   GROQ_MODEL=llama-3.3-70b-versatile
+   SEARCH_PROVIDER=duckduckgo
+   ```
+
+4. **Run the app**
+   ```bash
+   streamlit run app.py
+   ```
+
+## Configuration
+
+All configuration is via `.env`:
+
+| Variable | Default | Options |
+|----------|---------|---------|
+| `LLM_PROVIDER` | `groq` | `groq`, `together`, `ollama` |
+| `GROQ_API_KEY` | — | Get free at [console.groq.com](https://console.groq.com) |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Any Groq model |
+| `SEARCH_PROVIDER` | `duckduckgo` | `duckduckgo`, `tavily` |
+| `TAVILY_API_KEY` | — | Required if using Tavily |
+| `STABILITY_API_KEY` | — | Optional — enables image generation |
+
+## Deployment
+
+Deploy on **Streamlit Community Cloud**:
+
+1. Push this repo to GitHub
+2. Log in to [share.streamlit.io](https://share.streamlit.io)
+3. Select the repo and set `app.py` as the entry point
+4. Add your secrets (API keys) in the Streamlit dashboard
+
+## Project Structure
+
+```
+├── app.py                 # Streamlit UI
+├── agents.py              # Agent function factories + LLM/search init
+├── graph.py               # LangGraph state schema + workflow definition
+├── prompts.py             # Prompt templates for all 9 agents
+├── vector_store.py        # ChromaDB persistence
+├── scraper.py             # Web scraping (BeautifulSoup + Trafilatura)
+├── mcp_tools.py           # MCP tool handler definitions
+├── md_to_pdf.py           # Markdown-to-PDF conversion (WeasyPrint)
+├── requirements.txt       # Python dependencies
+└── .env                   # API keys (not committed)
 ```
 
-The app will open in your browser at `http://localhost:8501`
+## License
 
-## 🤖 How It Works
-
-The system uses four specialized AI agents that work together:
-
-1. ** Supervisor Agent**
-   - Coordinates the entire workflow
-   - Decides which agent should work next
-   - Manages task delegation
-
-2. ** Researcher Agent**
-   - Searches the web for relevant information
-   - Uses Tavily search API
-   - Gathers and compiles research findings
-
-3. ** Writer Agent**
-   - Creates research reports from findings
-   - Revises drafts based on feedback
-   - Ensures coherent and well-structured output
-
-4. ** Critiquer Agent**
-   - Reviews drafts for quality
-   - Provides actionable feedback
-   - Approves final reports
-
-### Workflow
-
-```
-Start → Supervisor → Researcher → Supervisor → Writer → Critiquer → Supervisor
-                ↑                                                        ↓
-                └────────────────── (loop until approved) ──────────────┘
-```
-
-##  Troubleshooting
-
-### Common Issues
-
-**1. Import Errors**
-```bash
-# Reinstall all dependencies
-pip install -r requirements.txt --upgrade
-```
-
-**2. API Key Errors**
-- Verify your `.env` file is in the project root
-- Check that API keys are correct and active
-- Ensure no extra spaces in the `.env` file
-
-**3. Together AI Connection Issues**
-- The code uses Together AI's OpenAI-compatible endpoint
-- Ensure your API key has sufficient credits
-- Check network connectivity
-
-**4. Graphviz Installation Issues**
-- Graphviz is optional for visualization
-- The app will work without it
-- If needed, follow
+MIT

@@ -1,24 +1,37 @@
-.venv/
-.env
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
+*.py[cod]
 *.egg-info/
-.installed.cfg
+dist/
+build/
 *.egg
+.eggs/
 
-#~\homechef-venv\Scripts\Activate.ps1
+# Environment
+.env
+.env.local
+venv/
+.venv/
+
+# Streamlit
+.streamlit/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data
+chroma_db/
+assets/
+*.png
+*.jpg
+*.pdf
+*.mp4
+*.mov
+
+# Logs
+*.log
