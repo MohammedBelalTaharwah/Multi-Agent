@@ -64,8 +64,22 @@ def get_search_tool():
     else:
         raise ValueError(f"Unknown SEARCH_PROVIDER '{provider}'. Use: tavily, duckduckgo")
 
-llm = get_llm()
-search_tool = get_search_tool()
+_llm_instance = None
+_search_tool_instance = None
+
+
+def get_llm_instance():
+    global _llm_instance
+    if _llm_instance is None:
+        _llm_instance = get_llm()
+    return _llm_instance
+
+
+def get_search_tool_instance():
+    global _search_tool_instance
+    if _search_tool_instance is None:
+        _search_tool_instance = get_search_tool()
+    return _search_tool_instance
 
 
 def _perform_search(query: str) -> tuple:
@@ -101,24 +115,26 @@ def _perform_search(query: str) -> tuple:
             return raw, normalised
         # Fallback to string-based search
         try:
-            if hasattr(search_tool, "invoke"):
-                resp = search_tool.invoke({"query": query})
-            elif callable(search_tool):
-                resp = search_tool({"query": query})
+            st = get_search_tool_instance()
+            if hasattr(st, "invoke"):
+                resp = st.invoke({"query": query})
+            elif callable(st):
+                resp = st({"query": query})
             else:
-                resp = search_tool.run(query)
+                resp = st.run(query)
         except Exception:
             resp = ""
         return str(resp) if resp else f"No results for: {query}", []
 
     # Tavily path
     try:
-        if hasattr(search_tool, "invoke"):
-            search_response = search_tool.invoke({"query": query})
-        elif callable(search_tool):
-            search_response = search_tool({"query": query})
-        elif hasattr(search_tool, "run"):
-            search_response = search_tool.run(query)
+        st = get_search_tool_instance()
+        if hasattr(st, "invoke"):
+            search_response = st.invoke({"query": query})
+        elif callable(st):
+            search_response = st({"query": query})
+        elif hasattr(st, "run"):
+            search_response = st.run(query)
         else:
             raise AttributeError("Search tool not callable")
     except Exception as e:
@@ -152,21 +168,42 @@ def _perform_search(query: str) -> tuple:
 
     return raw_output, results_list
 
-# Vector store
-try:
-    from vector_store import get_collection, store_finding, search_findings
-    vstore = get_collection()
-except Exception as e:
-    print(f"[VectorStore] Not available: {e}")
-    vstore = None
+# Vector store (lazy init)
+_vstore_instance = None
 
-# MCP tools
-try:
-    from mcp_tools import get_mcp_tool, list_mcp_tools
-    mcp_available = True
-except Exception as e:
-    print(f"[MCP] Not available: {e}")
-    mcp_available = False
+
+def get_vstore():
+    global _vstore_instance
+    if _vstore_instance is None:
+        try:
+            from vector_store import get_collection, store_finding, search_findings
+            _vstore_instance = get_collection()
+            globals()["store_finding"] = store_finding
+            globals()["search_findings"] = search_findings
+        except Exception as e:
+            print(f"[VectorStore] Not available: {e}")
+            _vstore_instance = None
+    return _vstore_instance
+
+
+def has_vstore():
+    return get_vstore() is not None
+
+
+# MCP tools (lazy init)
+_mcp_available = None
+
+
+def mcp_available():
+    global _mcp_available
+    if _mcp_available is None:
+        try:
+            from mcp_tools import get_mcp_tool, list_mcp_tools  # noqa: F401
+            _mcp_available = True
+        except Exception as e:
+            print(f"[MCP] Not available: {e}")
+            _mcp_available = False
+    return _mcp_available
 
 
 def _call_llm(llm_obj, *args, **kwargs):
@@ -291,7 +328,7 @@ def create_supervisor_chain():
         )
 
         try:
-            response = _call_llm(llm, prompt)
+            response = _call_llm(get_llm_instance(), prompt)
             content = response.content if hasattr(response, 'content') else str(response)
             decision = _parse_json_from_text(content)
             if "next_step" in decision:
@@ -330,10 +367,12 @@ def create_researcher_agent():
             sources = []
 
             # Store in vector store
-            if results_list and vstore:
+            from vector_store import store_finding
+            vs = get_vstore()
+            if results_list and vs:
                 for i, r in enumerate(results_list):
                     fid = f"src_{hash(query)}_{i}"
-                    store_finding(vstore, fid, r.get('content', ''), {
+                    store_finding(vs, fid, r.get('content', ''), {
                         'title': r.get('title', ''),
                         'url': r.get('url', ''),
                         'query': query
@@ -367,7 +406,7 @@ def create_researcher_agent():
 Format as clear bullet points with the most important information."""
 
             try:
-                summary_response = _call_llm(llm, summary_prompt)
+                summary_response = _call_llm(get_llm_instance(), summary_prompt)
                 summary = summary_response.content if hasattr(summary_response, 'content') else str(summary_response)
             except Exception as e:
                 print(f"Summarization error: {e}")
@@ -428,7 +467,7 @@ def create_specialized_researcher_agent(persona="hardware"):
             # Use persona-specific prompt to guide the analysis
             full_prompt = persona_prompt.format(task=query) + f"\n\nSearch Results:\n{raw_output}\n\nProvide your focused {persona_label} analysis:"
             try:
-                summary_response = _call_llm(llm, full_prompt)
+                summary_response = _call_llm(get_llm_instance(), full_prompt)
                 summary = summary_response.content if hasattr(summary_response, 'content') else str(summary_response)
             except Exception as e:
                 print(f"Specialized summarization error: {e}")
@@ -499,7 +538,7 @@ def create_classification_agent():
         )
 
         try:
-            response = _call_llm(llm, prompt)
+            response = _call_llm(get_llm_instance(), prompt)
             content = response.content if hasattr(response, 'content') else str(response)
             classified = content if content else "Classification completed."
 
@@ -537,7 +576,7 @@ def create_ner_agent():
         )
 
         try:
-            response = _call_llm(llm, prompt)
+            response = _call_llm(get_llm_instance(), prompt)
             content = response.content if hasattr(response, 'content') else str(response)
 
             # Try to parse entities and relationships
@@ -581,7 +620,7 @@ def create_analyzer_agent():
         )
 
         try:
-            response = _call_llm(llm, prompt)
+            response = _call_llm(get_llm_instance(), prompt)
             content = response.content if hasattr(response, 'content') else str(response)
 
             # Build structured outline
@@ -632,7 +671,7 @@ def create_illustration_agent():
             )
 
             try:
-                response = _call_llm(llm, prompt)
+                response = _call_llm(get_llm_instance(), prompt)
                 content = response.content if hasattr(response, 'content') else str(response)
 
                 # Try to generate actual image via Stable Diffusion API
@@ -709,7 +748,7 @@ def create_writer_chain():
         )
 
         try:
-            response = _call_llm(llm, prompt)
+            response = _call_llm(get_llm_instance(), prompt)
             content = response.content if hasattr(response, 'content') else str(response)
 
             new_illustration_requests = []
@@ -771,7 +810,7 @@ def create_critique_chain():
         )
 
         try:
-            response = _call_llm(llm, prompt)
+            response = _call_llm(get_llm_instance(), prompt)
             content = response.content if hasattr(response, 'content') else str(response)
 
             # Try to parse JSON response with scores and repetition info
