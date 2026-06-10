@@ -9,6 +9,12 @@ import json
 
 load_dotenv()
 
+# Streamlit Cloud: copy secrets from st.secrets to os.environ
+if hasattr(st, "secrets") and st.secrets:
+    for key in st.secrets:
+        if key not in os.environ or not os.environ.get(key):
+            os.environ[key] = str(st.secrets[key])
+
 st.set_page_config(page_title="Multi-Agent Research Assistant", page_icon="brain", layout="wide")
 
 
@@ -23,7 +29,8 @@ def check_api_keys():
     if search_provider == "tavily" and not os.environ.get("TAVILY_API_KEY"):
         missing.append("TAVILY_API_KEY")
     if missing:
-        st.error(f"Missing API keys: {', '.join(missing)}. Please set them in your .env file.")
+        st.error(f"Missing API keys: {', '.join(missing)}.")
+        st.info("On Streamlit Cloud: go to Settings > Secrets and add:\n\n```toml\nGROQ_API_KEY = \"gsk_your_key\"\nLLM_PROVIDER = \"groq\"\nSEARCH_PROVIDER = \"duckduckgo\"\n```\n\nLocally: create a `.env` file in the repo root with the same variables.")
         return False
     st.success("Configuration loaded successfully.")
     return True
